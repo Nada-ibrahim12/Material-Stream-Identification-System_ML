@@ -1,39 +1,16 @@
 import os
-import cv2
-import numpy as np
-from sklearn.model_selection import train_test_split
-from PIL import Image
 import shutil
-import albumentations as A
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, img_to_array, load_img
+import numpy as np
+from tensorflow.keras.preprocessing.image import array_to_img
 
 dataset = "data/dataset"
 augmented = "data/augmented"
 os.makedirs(augmented, exist_ok=True)
 
-def valid_image(path):
-    try:
-        with Image.open(path) as img:
-            img.verify()
-        return True
-    except:
-        return False
-
-augmentor = A.Compose([
-    A.RandomRotate90(p=0.5),
-    A.HorizontalFlip(p=0.5),
-    A.VerticalFlip(p=0.2),
-    A.RandomBrightnessContrast(p=0.4),
-    A.HueSaturationValue(p=0.3),
-    A.GaussNoise(var_limit=(10, 40), p=0.3),
-    A.MotionBlur(blur_limit=3, p=0.2),
-    # RandomResizedCrop requires size=(H, W)
-    A.RandomResizedCrop(size=(224, 224), scale=(0.8, 1.0), p=0.5),
-])
-
-
-def augment(img):
-    aug = augmentor(image=img)["image"]
-    return aug
+target_train_size = 500  
+image_size = (224, 224)  
 
 for split in ['train', 'val']:
     split_dir = os.path.join(augmented, split)
@@ -43,68 +20,68 @@ for split in ['train', 'val']:
         if os.path.isdir(class_path):
             os.makedirs(os.path.join(split_dir, class_name), exist_ok=True)
 
-
-print("Starting Augmentation Process:")
-
-TARGET_SIZE = 500
+image_generator = ImageDataGenerator(
+    rotation_range=30,
+    width_shift_range=0.1,
+    horizontal_flip=True,
+    height_shift_range=0.1,
+    zoom_range=0.2,
+    fill_mode='nearest',
+    shear_range=0.1,
+)
 
 for class_name in os.listdir(dataset):
     class_path = os.path.join(dataset, class_name)
     if not os.path.isdir(class_path):
         continue
 
-    print(f"\nProcessing class: {class_name}")
-
-    images = [
-        f for f in os.listdir(class_path)
-        if f.lower().endswith((".jpg", ".png", ".jpeg"))
-        and valid_image(os.path.join(class_path, f))
-    ]
-
+    images = [f for f in os.listdir(class_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
     if len(images) == 0:
-        print("No valid images — skipping")
+        print(f"Warning: No images found in {class_name}")
         continue
 
-    train_imgs, val_imgs = train_test_split(images, test_size=0.2, random_state=42)
-
-    val_dir = os.path.join(augmented, 'val', class_name)
-    for img_name in val_imgs:
-        shutil.copy(os.path.join(class_path, img_name), os.path.join(val_dir, img_name))
+    train_imgs, val_imgs = train_test_split(images, test_size=0.2, random_state=42, shuffle=True)
 
     train_dir = os.path.join(augmented, 'train', class_name)
+    val_dir = os.path.join(augmented, 'val', class_name)
+
+    for img_name in val_imgs:
+        src = os.path.join(class_path, img_name)
+        dst = os.path.join(val_dir, img_name)
+        if not os.path.exists(dst):
+            shutil.copy(src, dst)
+
     for img_name in train_imgs:
-        shutil.copy(os.path.join(class_path, img_name), os.path.join(train_dir, img_name))
+        src = os.path.join(class_path, img_name)
+        dst = os.path.join(train_dir, img_name)
+        if not os.path.exists(dst):
+            shutil.copy(src, dst)
 
-    original_train_count = len(train_imgs)
-    needed = TARGET_SIZE - original_train_count
-    print(f"Original train count: {original_train_count}")
-    print(f"Augmenting {needed} new images…")
+    current_train_count = len(os.listdir(train_dir))
+    needed_aug = target_train_size - current_train_count
 
-    if needed > 0:
+    if needed_aug > 0:
+        print(f"Augmenting {needed_aug} images for class {class_name}")
         i = 0
-        created = 0
-
-        while created < needed:
-            img_name = train_imgs[i % original_train_count]
-            img_path = os.path.join(class_path, img_name)
-
-            img = cv2.imread(img_path)
-            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-            aug_img = augment(img)
-
-            save_name = f"{os.path.splitext(img_name)[0]}_aug_{created:03d}.jpg"
-            save_path = os.path.join(train_dir, save_name)
-
-            cv2.imwrite(save_path, cv2.cvtColor(aug_img, cv2.COLOR_RGB2BGR))
-
-            created += 1
+        while needed_aug > 0:
+            img_name = train_imgs[i % len(train_imgs)]
             i += 1
+            img_path = os.path.join(class_path, img_name)
+            try:
+                img = load_img(img_path, target_size=image_size)
+                x = img_to_array(img)
+                x = np.expand_dims(x, axis=0)
 
-            if created % 50 == 0:
-                print(f"Generated {created}/{needed}")
+                aug_iter = image_generator.flow(x, batch_size=1)
+                aug_img = next(aug_iter)[0].astype('uint8')
 
-    print(f"Done! Final train count: {len(os.listdir(train_dir))}")
+                save_name = f"{os.path.splitext(img_name)[0]}_aug_{i:03d}.jpg"
+                save_path = os.path.join(train_dir, save_name)
+                array_to_img(aug_img).save(save_path)
 
-print("Augmentation Completed Successfully!")
+                needed_aug -= 1
+            except Exception as e:
+                print(f"Error augmenting {img_name}: {e}")
+
+print("Augmentation and splitting completed successfully!!!!")
 

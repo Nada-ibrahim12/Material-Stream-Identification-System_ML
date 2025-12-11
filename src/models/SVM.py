@@ -1,18 +1,13 @@
 import numpy as np
 from sklearn.decomposition import PCA
-from sklearn.metrics import classification_report
 from sklearn.preprocessing import StandardScaler
-from sklearn.neighbors import KNeighborsClassifier
 from sklearn.model_selection import train_test_split
-from sklearn.model_selection import cross_val_score
-import os
-
 from sklearn.svm import SVC
+import os
 
 processed_dir = "data/processed"
 
-splitting = os.path.exists(
-    os.path.join(processed_dir, 'x_features_train.npy')) and os.path.exists(os.path.join(processed_dir, 'x_features_val.npy'))
+splitting = os.path.exists(os.path.join(processed_dir, 'x_features_train.npy')) and os.path.exists(os.path.join(processed_dir, 'x_features_val.npy'))
 
 if splitting:
     print("Loading features from train/val split:")
@@ -33,15 +28,24 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_val_scaled = scaler.transform(X_test)
 
-svm = SVC(kernel='rbf', C=0.3, gamma='scale', probability=True)
-svm.fit(X_train_scaled, y_train)
+c_values = [0.3, 0.5, 0.7,0.9, 1,3, 5,10]
 
-train_acc = svm.score(X_train_scaled, y_train)
-test_acc = svm.score(X_val_scaled, y_test)
+best_c = None
+best_accuracy = 0
 
-print(f"Train Accuracy: {train_acc*100:.2f}%")
-print(f"Val Accuracy: {test_acc*100:.2f}%")
+for c in c_values:
+    svm = SVC(kernel='rbf', C=c, gamma='scale',class_weight='balanced', random_state=42)
+    svm.fit(X_train_scaled, y_train)
 
-y_pred = svm.predict(X_val_scaled)
-print("\nClassification Report:")
-print(classification_report(y_test, y_pred))
+    train_accuracy = svm.score(X_train_scaled, y_train)
+    test_accuracy = svm.score(X_val_scaled, y_test)
+
+    gap = train_accuracy - test_accuracy
+
+    print(f"C={c:4}: Train Accuracy: {train_accuracy*100:6.2f}%  |  Val Accuracy: {test_accuracy*100:6.2f}%  |  Gap: {(gap)*100:6.2f}%")
+
+    if test_accuracy > best_accuracy :
+        best_accuracy = test_accuracy
+        best_c = c
+
+print(f"Best C: {best_c} with Val Accuracy: {best_accuracy*100:.2f}%")

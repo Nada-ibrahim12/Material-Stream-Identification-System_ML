@@ -6,13 +6,14 @@ import numpy as np
 import os
 from pathlib import Path
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cpu')
+
 model = models.resnet50(pretrained=True)
 model.fc = torch.nn.Identity()  
 model = model.to(device)
 model.eval()
 
-transform_image = transforms.Compose([
+transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406],
@@ -22,7 +23,7 @@ transform_image = transforms.Compose([
 def extract_features(path):
     try:
         img = Image.open(path).convert('RGB')
-        img = transform_image(img).unsqueeze(0).to(device)
+        img = transform(img).unsqueeze(0).to(device)
         with torch.no_grad():
             feat = model(img)
         return feat.cpu().numpy().flatten()
@@ -100,9 +101,7 @@ class_map = {
     "trash": 5
 }
 
-
-X_train, y_train = extract_features_from_split(
-    DATASET_PATH, 'train', class_map)
+X_train, y_train = extract_features_from_split(DATASET_PATH, 'train', class_map)
 X_val, y_val = extract_features_from_split(DATASET_PATH, 'val', class_map)
 
 processed_dir = "data/processed"
@@ -115,7 +114,7 @@ if len(X_train) > 0:
     print(f"data/processed/x_features_train.npy: {X_train.shape}")
     print(f"data/processed/y_labels_train.npy: {y_train.shape}")
 else:
-    print("\nNo training features extracted!")
+    print("\nNo training features extracted")
 
 if len(X_val) > 0:
     np.save(os.path.join(processed_dir, "x_features_val.npy"), X_val)
@@ -124,7 +123,7 @@ if len(X_val) > 0:
     print(f"data/processed/x_features_val.npy: {X_val.shape}")
     print(f"data/processed/y_labels_val.npy: {y_val.shape}")
 else:
-    print("\nNo validation features extracted!")
+    print("\nNo validation features extracted")
 
 X_combined = np.vstack([X_train, X_val]) if (len(X_train) > 0 and len(
     X_val) > 0) else (X_train if len(X_train) > 0 else X_val)
@@ -155,5 +154,5 @@ if len(y_combined) > 0:
             100 if len(y_combined) > 0 else 0
         print(f"  {class_name:12} | Total: {count:5d} | Train: {train_count:5d} | Val: {val_count:5d} | {percentage:6.2f}%")
 
-print("Features extracted and saved successfully!")
+print("Features extracted and saved successfully!!!!")
 
