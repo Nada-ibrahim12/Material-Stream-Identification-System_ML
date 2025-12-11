@@ -7,26 +7,22 @@ import os
 from pathlib import Path
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f"Using device: {device}")
-
-model = models.efficientnet_b0(pretrained=True)
-model.classifier = torch.nn.Identity()  # Remove final layer 
+model = models.resnet50(pretrained=True)
+model.fc = torch.nn.Identity()  
 model = model.to(device)
 model.eval()
 
-# Image preprocessing pipeline
-transform = transforms.Compose([
+transform_image = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406],
                         [0.229, 0.224, 0.225])
 ])
 
-
 def extract_features(path):
     try:
         img = Image.open(path).convert('RGB')
-        img = transform(img).unsqueeze(0).to(device)
+        img = transform_image(img).unsqueeze(0).to(device)
         with torch.no_grad():
             feat = model(img)
         return feat.cpu().numpy().flatten()
@@ -34,15 +30,12 @@ def extract_features(path):
         print(f"Error processing {path}: {e}")
         return None
 
-
 def extract_features_from_split(dataset_path, split_name, class_map):
     X, y = [], []
     total_processed = 0
     total_failed = 0
 
-    print(f"\n{'='*60}")
     print(f"Extracting features from {split_name.upper()} split")
-    print(f"{'='*60}\n")
 
     split_path = os.path.join(dataset_path, split_name)
 
@@ -57,13 +50,12 @@ def extract_features_from_split(dataset_path, split_name, class_map):
             print(f"  {idx}. {class_name}: Skipped (directory not found)")
             continue
 
-        # Get all valid images
         images = []
-        for ext in ('*.png', '*.jpg', '*.jpeg', '*.bmp', '*.tiff'):
+        for ext in ('*.png', '*.jpg', '*.jpeg'):
             images.extend(Path(class_path).glob(f"*{ext[1:]}"))
             images.extend(Path(class_path).glob(f"*{ext[1:].upper()}"))
 
-        images = list(set(images))  # use SET remove duplicates
+        images = list(set(images)) 
 
         if not images:
             print(f"  {idx}. {class_name}: No images found")
@@ -90,15 +82,13 @@ def extract_features_from_split(dataset_path, split_name, class_map):
             f"{class_processed} images processed, {class_failed} failed")
 
     print(f"\n{split_name.upper()} split summary:")
-    print(f"  Total processed: {total_processed}")
-    print(f"  Total failed: {total_failed}")
-    print(f"  Feature shape: ({len(X)}, {len(X[0]) if X else 0})")
+    print(f"Total processed: {total_processed}")
+    print(f"Total failed: {total_failed}")
+    print(f"Feature shape: ({len(X)}, {len(X[0]) if X else 0})")
 
     X = np.array(X, dtype=np.float32)
     y = np.array(y, dtype=np.int64)
-
     return X, y
-
 
 DATASET_PATH = "data/augmented"
 class_map = {
@@ -110,13 +100,6 @@ class_map = {
     "trash": 5
 }
 
-print(f"\n{'='*60}")
-print("Feature Extraction from Augmented Dataset")
-print(f"{'='*60}")
-print(f"Classes: {list(class_map.keys())}")
-print(f"Model: EfficientNet-B0")
-print(f"Device: {device}")
-print(f"{'='*60}")
 
 X_train, y_train = extract_features_from_split(
     DATASET_PATH, 'train', class_map)
@@ -143,7 +126,6 @@ if len(X_val) > 0:
 else:
     print("\nNo validation features extracted!")
 
-
 X_combined = np.vstack([X_train, X_val]) if (len(X_train) > 0 and len(
     X_val) > 0) else (X_train if len(X_train) > 0 else X_val)
 y_combined = np.concatenate([y_train, y_val]) if (len(y_train) > 0 and len(
@@ -153,19 +135,15 @@ if len(X_combined) > 0:
     np.save(os.path.join(processed_dir, "x_features.npy"), X_combined)
     np.save(os.path.join(processed_dir, "y_labels.npy"), y_combined)
     print(f"\nCombined features saved (backward compatible):")
-    print(f"  data/processed/x_features.npy: {X_combined.shape}")
-    print(f"  data/processed/y_labels.npy: {y_combined.shape}")
+    print(f"data/processed/x_features.npy: {X_combined.shape}")
+    print(f"data/processed/y_labels.npy: {y_combined.shape}")
 
-print(f"\n{'='*60}")
 print("Feature Extraction Summary")
-print(f"{'='*60}")
 print(f"Training samples: {len(X_train)}")
 print(f"Validation samples: {len(X_val)}")
 print(f"Total samples: {len(X_combined)}")
-print(
-    f"Features per sample: {X_combined.shape[1] if len(X_combined) > 0 else 0}")
+print(f"Features per sample: {X_combined.shape[1] if len(X_combined) > 0 else 0}")
 print(f"Number of classes: {len(class_map)}")
-
 
 if len(y_combined) > 0:
     print(f"\nClass distribution:")
@@ -177,6 +155,5 @@ if len(y_combined) > 0:
             100 if len(y_combined) > 0 else 0
         print(f"  {class_name:12} | Total: {count:5d} | Train: {train_count:5d} | Val: {val_count:5d} | {percentage:6.2f}%")
 
-print(f"{'='*60}")
 print("Features extracted and saved successfully!")
-print(f"{'='*60}\n")
+

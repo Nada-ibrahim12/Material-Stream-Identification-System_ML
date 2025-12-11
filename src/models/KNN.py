@@ -1,22 +1,24 @@
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsClassifier
-from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import os
 
 processed_dir = "data/processed"
+k_values = [3, 5, 7, 9, 11]
+best_k = None
+best_accuracy = 0
 
-use_split = os.path.exists(
+splitting = os.path.exists(
     os.path.join(processed_dir, 'x_features_train.npy')) and os.path.exists(os.path.join(processed_dir, 'x_features_val.npy'))
 
-if use_split:
-    print("Loading features from train/val split...")
+if splitting:
+    print("Loading features from train/val split:::")
     X_train = np.load(os.path.join(processed_dir, 'x_features_train.npy'))
     y_train = np.load(os.path.join(processed_dir, 'y_labels_train.npy'))
     X_test = np.load(os.path.join(processed_dir, 'x_features_val.npy'))
     y_test = np.load(os.path.join(processed_dir, 'y_labels_val.npy'))
 else:
-    print("Loading combined features (backward compatibility)...")
+    print("Loading combined features...")
     X = np.load(os.path.join(processed_dir, 'x_features.npy'))
     y = np.load(os.path.join(processed_dir, 'y_labels.npy'))
 
@@ -29,19 +31,7 @@ scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-print(f"\nDataset Information:")
-print(f"Training samples: {len(X_train)}")
-print(f"Testing samples: {len(X_test)}")
-print(f"Features per sample: {X_train.shape[1]}")
-
-k_values = [3, 5, 7, 9, 11]
-
-print(f"\n{'='*70}")
-print(f"KNN Classification Results")
-print(f"{'='*70}\n")
-
-best_k = None
-best_accuracy = 0
+print(f"KNN Results")
 
 for k in k_values:
     knn = KNeighborsClassifier(
@@ -57,11 +47,8 @@ for k in k_values:
         best_accuracy = test_accuracy
         best_k = k
 
-print(f"\n{'='*70}")
 print(f"Best K: {best_k} with Test Accuracy: {best_accuracy*100:.2f}%")
-print(f"{'='*70}\n")
 
-# Train final model with best K
 final_knn = KNeighborsClassifier(
     n_neighbors=best_k, weights='uniform', metric='cosine')
 final_knn.fit(X_train_scaled, y_train)
