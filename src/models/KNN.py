@@ -2,55 +2,64 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsClassifier
 import os
+from pathlib import Path
 
-processed_dir = "data/processed"
-k_values = [3, 5, 7, 9, 11]
-best_k = None
-best_accuracy = 0
+processed_dir = Path.cwd() / "data" / "processed"
 
-splitting = os.path.exists(
-    os.path.join(processed_dir, 'x_features_train.npy')) and os.path.exists(os.path.join(processed_dir, 'x_features_val.npy'))
-
-if splitting:
-    print("Loading features from train/val split:::")
-    X_train = np.load(os.path.join(processed_dir, 'x_features_train.npy'))
-    y_train = np.load(os.path.join(processed_dir, 'y_labels_train.npy'))
-    X_test = np.load(os.path.join(processed_dir, 'x_features_val.npy'))
-    y_test = np.load(os.path.join(processed_dir, 'y_labels_val.npy'))
-else:
-    print("Loading combined features...")
-    X = np.load(os.path.join(processed_dir, 'x_features.npy'))
-    y = np.load(os.path.join(processed_dir, 'y_labels.npy'))
-
-    from sklearn.model_selection import train_test_split
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y, shuffle=True
-    )
+X_train = np.load(processed_dir / 'x_features_train.npy')
+y_train = np.load(processed_dir / 'y_labels_train.npy')
+X_test = np.load(processed_dir / 'x_features_val.npy')
+y_test = np.load(processed_dir / 'y_labels_val.npy')
 
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
-print(f"KNN Results")
+k_values = [3, 5, 7, 9, 11]
+thr = 0.58
+
+print("========== KNN RESULTS ==========")
 
 for k in k_values:
+    print(f"\n🔹 K = {k}")
+
     knn = KNeighborsClassifier(
-        n_neighbors=k, weights='uniform', metric='cosine')
+        n_neighbors=k,
+        weights='uniform',
+        metric='cosine'
+    )
     knn.fit(X_train_scaled, y_train)
 
-    train_accuracy = knn.score(X_train_scaled, y_train)
-    test_accuracy = knn.score(X_test_scaled, y_test)
+    train_acc = knn.score(X_train_scaled, y_train)
+    test_acc = knn.score(X_test_scaled, y_test)
 
-    print(f"K={k:2d}: Train Accuracy: {train_accuracy*100:6.2f}%  |  Test Accuracy: {test_accuracy*100:6.2f}%  |  Gap: {(train_accuracy - test_accuracy)*100:6.2f}%")
+    print(f"Before Unknown → Train {train_acc*100:.2f}% | "
+          f"Test {test_acc*100:.2f}% | "
+          f"Gap {(train_acc-test_acc)*100:.2f}%")
 
-    if test_accuracy > best_accuracy:
-        best_accuracy = test_accuracy
-        best_k = k
+    distances, _ = knn.kneighbors(X_test_scaled)
+    avg_dist = distances.mean(axis=1)
 
-print(f"Best K: {best_k} with Test Accuracy: {best_accuracy*100:.2f}%")
+    y_pred = []
+    for i in range(len(X_test_scaled)):
+        if avg_dist[i] > thr:
+            y_pred.append(6)  
+        else:
+            y_pred.append(
+                knn.predict(X_test_scaled[i].reshape(1, -1))[0]
+            )
+    y_pred = np.array(y_pred)
 
-final_knn = KNeighborsClassifier(
-    n_neighbors=best_k, weights='uniform', metric='cosine')
-final_knn.fit(X_train_scaled, y_train)
+    known_mask = (y_test != 6)
+    unknown_mask = (y_test == 6)
 
-y_pred = final_knn.predict(X_test_scaled)
+    known_acc = (y_pred[known_mask] == y_test[known_mask]).mean()
+    unknown_reject = (
+        (y_pred[unknown_mask] == 6).mean()
+        if np.sum(unknown_mask) > 0 else 0.0
+    )
+    overall_acc = (y_pred == y_test).mean()
+
+    print(f"After Unknown → Known {known_acc*100:.2f}% | "
+          f"Unknown Reject {unknown_reject*100:.2f}% | "
+          f"Overall {overall_acc*100:.2f}%")

@@ -1,15 +1,17 @@
 import torch
 import torchvision.models as models
+from torchvision.models import ResNet50_Weights
 import torchvision.transforms as transforms
 from PIL import Image
 import numpy as np
 import os
 from pathlib import Path
 
+
 device = torch.device('cpu')
 
 model = models.resnet50(pretrained=True)
-model.fc = torch.nn.Identity()  
+model.fc = torch.nn.Identity()
 model = model.to(device)
 model.eval()
 
@@ -17,7 +19,7 @@ transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
     transforms.Normalize([0.485, 0.456, 0.406],
-                        [0.229, 0.224, 0.225])
+                         [0.229, 0.224, 0.225])
 ])
 
 def extract_features(path):
@@ -56,7 +58,7 @@ def extract_features_from_split(dataset_path, split_name, class_map):
             images.extend(Path(class_path).glob(f"*{ext[1:]}"))
             images.extend(Path(class_path).glob(f"*{ext[1:].upper()}"))
 
-        images = list(set(images)) 
+        images = list(set(images))
 
         if not images:
             print(f"  {idx}. {class_name}: No images found")
@@ -101,7 +103,8 @@ class_map = {
     "trash": 5
 }
 
-X_train, y_train = extract_features_from_split(DATASET_PATH, 'train', class_map)
+X_train, y_train = extract_features_from_split(
+    DATASET_PATH, 'train', class_map)
 X_val, y_val = extract_features_from_split(DATASET_PATH, 'val', class_map)
 
 processed_dir = "data/processed"
@@ -141,7 +144,8 @@ print("Feature Extraction Summary")
 print(f"Training samples: {len(X_train)}")
 print(f"Validation samples: {len(X_val)}")
 print(f"Total samples: {len(X_combined)}")
-print(f"Features per sample: {X_combined.shape[1] if len(X_combined) > 0 else 0}")
+print(
+    f"Features per sample: {X_combined.shape[1] if len(X_combined) > 0 else 0}")
 print(f"Number of classes: {len(class_map)}")
 
 if len(y_combined) > 0:
@@ -155,4 +159,3 @@ if len(y_combined) > 0:
         print(f"  {class_name:12} | Total: {count:5d} | Train: {train_count:5d} | Val: {val_count:5d} | {percentage:6.2f}%")
 
 print("Features extracted and saved successfully!!!!")
-

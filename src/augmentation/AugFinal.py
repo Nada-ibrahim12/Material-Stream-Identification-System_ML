@@ -5,94 +5,104 @@ import os
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-#Get dataset path and create augmented path
-dataset = Path(__file__).resolve().parent.parent / "data" / "dataset"
-augmented = Path(__file__).resolve().parent.parent / "data" / "augmented"
-#dataset = "data/dataset"
-#augmented = "data/augmented"
-# if os.path.exists(augmented):
-#     shutil.rmtree(augmented)
+dataset = Path(__file__).resolve().parent.parent.parent / "data" / "dataset"
+augmented = Path(__file__).resolve().parent.parent.parent / \
+    "data" / "augmented"
+
 os.makedirs(augmented, exist_ok=True)
 
-TRAIN_SIZE = 500  
-IMAGE_SIZE = (224, 224)  
+IMAGE_SIZE = (224, 224)
+MIN_TRAIN_SIZE = 500        # condition 2
+MIN_TRAIN_RATIO = 0.30      # condition 1
 
-#Random augmentation generator
+# Augmentation generator
 image_generator = ImageDataGenerator(
-    rotation_range=45,         
+    rotation_range=45,
     width_shift_range=0.1,
     height_shift_range=0.1,
     zoom_range=0.2,
     shear_range=0.1,
     horizontal_flip=True,
-    brightness_range=[0.8, 1.2],   
-    channel_shift_range=20,        
+    brightness_range=[0.8, 1.2],
+    channel_shift_range=20,
     fill_mode='nearest',
 )
 
-#split data into train and test folders
+# Create split folders
 for split in ['train', 'val']:
-    split_dir = os.path.join(augmented, split)
-    os.makedirs(split_dir, exist_ok=True)
+    split_dir = augmented / split
+    split_dir.mkdir(parents=True, exist_ok=True)
     for class_name in os.listdir(dataset):
-        class_path = os.path.join(dataset, class_name)
-        if os.path.isdir(class_path):
-            os.makedirs(os.path.join(split_dir, class_name), exist_ok=True)
+        class_path = dataset / class_name
+        if class_path.is_dir():
+            (split_dir / class_name).mkdir(exist_ok=True)
 
-
-
-
+# Process each class
 for class_name in os.listdir(dataset):
-    # print(f"\nProcessing class: '{class_name}'")
-    class_path = os.path.join(dataset, class_name)
-    if not os.path.isdir(class_path):
+    class_path = dataset / class_name
+    if not class_path.is_dir():
         continue
 
-    images = [f for f in os.listdir(class_path) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
-    
+    images = [f for f in os.listdir(class_path)
+              if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
 
-    #Split images into train and test and save them
-    train_imgs, val_imgs = train_test_split(images, test_size=0.2, random_state=42, shuffle=True)
-    train_dir = os.path.join(augmented, 'train', class_name)
-    val_dir = os.path.join(augmented, 'val', class_name)
+    total_images = len(images)
 
-    
+    # 🔹 Split first (80/20)
+    train_imgs, val_imgs = train_test_split(
+        images, test_size=0.2, random_state=42, shuffle=True
+    )
+
+    train_dir = augmented / 'train' / class_name
+    val_dir = augmented / 'val' / class_name
+
+    # Copy validation images
     for img_name in val_imgs:
-        src = os.path.join(class_path, img_name)
-        dst = os.path.join(val_dir, img_name)
-        if not os.path.exists(dst):
+        src = class_path / img_name
+        dst = val_dir / img_name
+        if not dst.exists():
             shutil.copy(src, dst)
 
-    
+    # Copy training images
     for img_name in train_imgs:
-        src = os.path.join(class_path, img_name)
-        dst = os.path.join(train_dir, img_name)
-        if not os.path.exists(dst):
+        src = class_path / img_name
+        dst = train_dir / img_name
+        if not dst.exists():
             shutil.copy(src, dst)
 
+    required_train_size = max(
+        int(total_images + (total_images * MIN_TRAIN_RATIO)),
+        MIN_TRAIN_SIZE
+    )
 
-    train_count = len(os.listdir(train_dir))
-    needed_aug = TRAIN_SIZE - train_count
+    current_train_count = len(os.listdir(train_dir))
+    needed_aug = max(0, required_train_size - current_train_count)
 
+    print(f"Class '{class_name}': total={total_images}, "
+          f"required_train={required_train_size}, "
+          f"augmenting={needed_aug}")
 
-    print(f"Augmenting {needed_aug} images for class {class_name}")
     i = 0
-    #Augment needed no of augmented images
     while needed_aug > 0:
         img_name = train_imgs[i % len(train_imgs)]
         i += 1
-        img_path = os.path.join(class_path, img_name)
+
+        img_path = class_path / img_name
         try:
             img = load_img(img_path, target_size=IMAGE_SIZE)
             arr = img_to_array(img)
             arr = np.expand_dims(arr, axis=0)
+
             aug_iter = image_generator.flow(arr, batch_size=1)
             aug_img = next(aug_iter)[0].astype('uint8')
-            save_name = f"{os.path.splitext(img_name)[0]}_aug_{i:03d}.jpg"
-            save_path = os.path.join(train_dir, save_name)
+
+            save_name = f"{Path(img_name).stem}_aug_{i:04d}.jpg"
+            save_path = train_dir / save_name
+
             array_to_img(aug_img).save(save_path)
             needed_aug -= 1
-        except Exception as e:
-            print(f"Error augmenting {img_name}")
 
-print("Augmentation and splitting completed successfully!!!!")
+        except Exception as e:
+            print(f"Error augmenting {img_name}: {e}")
+
+print("Augmentation and splitting completed successfully!")
