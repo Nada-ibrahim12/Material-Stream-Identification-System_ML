@@ -12,10 +12,9 @@ augmented = Path(__file__).resolve().parent.parent.parent / \
 os.makedirs(augmented, exist_ok=True)
 
 IMAGE_SIZE = (224, 224)
-MIN_TRAIN_SIZE = 500        # condition 2
-MIN_TRAIN_RATIO = 0.30      # condition 1
+MIN_TRAIN_SIZE = 500      
+MIN_TRAIN_RATIO = 1.30  
 
-# Augmentation generator
 image_generator = ImageDataGenerator(
     rotation_range=45,
     width_shift_range=0.1,
@@ -71,7 +70,7 @@ for class_name in os.listdir(dataset):
             shutil.copy(src, dst)
 
     required_train_size = max(
-        int(total_images + (total_images * MIN_TRAIN_RATIO)),
+        int(total_images * MIN_TRAIN_RATIO),
         MIN_TRAIN_SIZE
     )
 
