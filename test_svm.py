@@ -80,42 +80,69 @@ def predict(dataFilePath, bestModelPath):
 
     X_scaled = scaler.transform(X)
 
-    predictions = []
-
     use_open_set = (centroids is not None and distance_thr is not None)
 
+    per_feature_results = []
     if use_open_set:
         for x in X_scaled:
-            dists = np.array([np.linalg.norm(x - centroids[c])
-                             for c in known_classes])
-            min_dist = dists.min()
+            dists = np.array([np.linalg.norm(x - centroids[c]) for c in known_classes])
+            min_dist = float(dists.min())
 
             if min_dist > distance_thr:
-                predictions.append(unknown_class)
+                per_feature_results.append({"prediction": int(unknown_class), "avg_distance": min_dist})
                 continue
 
-            probs = svm.predict_proba([x])[0]
-            sorted_probs = np.sort(probs)[::-1]
-            max_prob = sorted_probs[0]
-            second_prob = sorted_probs[1] if len(sorted_probs) > 1 else 0
-            margin = max_prob - second_prob
-            pred_class = svm.classes_[np.argmax(probs)]
+            # try to use predict_proba if available
+            try:
+                probs = svm.predict_proba([x])[0]
+                sorted_probs = np.sort(probs)[::-1]
+                max_prob = sorted_probs[0]
+                second_prob = sorted_probs[1] if len(sorted_probs) > 1 else 0
+                margin = max_prob - second_prob
+                pred_class = int(svm.classes_[np.argmax(probs)])
 
-            if max_prob < prob_thr or margin < margin_thr:
-                predictions.append(unknown_class)
-            else:
-                predictions.append(pred_class)
+                if max_prob < prob_thr or margin < margin_thr:
+                    per_feature_results.append({"prediction": int(unknown_class), "avg_distance": min_dist})
+                else:
+                    per_feature_results.append({"prediction": pred_class, "avg_distance": min_dist})
+            except Exception:
+                pred_class = int(svm.predict([x])[0])
+                per_feature_results.append({"prediction": pred_class, "avg_distance": min_dist})
     else:
-        predictions = svm.predict(X_scaled).tolist()
+        # closed-set: predict and no distance
+        for x in X_scaled:
+            pred = int(svm.predict([x])[0])
+            per_feature_results.append({"prediction": pred, "avg_distance": None})
 
-    return predictions
+    # Map back to original image list, marking errored images
+    results = []
+    feat_idx = 0
+    for idx, img_path in enumerate(image_paths):
+        if idx in valid_indices:
+            r = per_feature_results[feat_idx]
+            results.append({
+                "image_path": str(img_path),
+                "prediction": r["prediction"],
+                "avg_distance": r["avg_distance"],
+                "status": "ok"
+            })
+            feat_idx += 1
+        else:
+            results.append({
+                "image_path": str(img_path),
+                "prediction": int(unknown_class),
+                "avg_distance": None,
+                "status": "error"
+            })
+
+    return results
 
 
 if __name__ == "__main__":
     data_path = "test"
     model_path = "models/svm_open_set_model.pkl"
 
-    predictions = predict(data_path, model_path)
+    results = predict(data_path, model_path)
 
     class_map = {
         0: "cardboard",
@@ -127,11 +154,11 @@ if __name__ == "__main__":
         6: "unknown"
     }
 
-    img_paths = []
-    for ext in ['*.png', '*.jpg', '*.jpeg', '*.PNG', '*.JPG', '*.JPEG']:
-        img_paths.extend(Path(data_path).glob(ext))
-    img_paths = sorted(list(set(img_paths)))
-
     print("\nPredictions:")
-    for p, pred in zip(img_paths, predictions):
-        print(f"{p.name}   ---->    {class_map[pred]}")
+    print(f"{'Index':<6}{'Filename':<40}{'Label':<12}{'ID':<4}{'AvgDist':>10}{'Status':>10}")
+    for i, r in enumerate(results):
+        p = Path(r["image_path"])
+        label = class_map.get(r["prediction"], "unknown")
+        avgd = f"{r['avg_distance']:.4f}" if r["avg_distance"] is not None else "-"
+        status = r.get("status", "ok")
+        print(f"{i:<6}{p.name:<40}{label:<12}{r['prediction']:<4}{avgd:>10}{status:>10}")

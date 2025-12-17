@@ -13,12 +13,12 @@ def predict(dataFilePath, bestModelPath):
     model_data = joblib.load(bestModelPath)
     knn = model_data["knn"]
     scaler = model_data["scaler"]
-    threshold = model_data.get("threshold", 0.58)
+    threshold = model_data.get("threshold", 0.7)
 
     device = torch.device('cpu')
 
     resnet_model = models.resnet50(pretrained=True)
-    resnet_model.fc = torch.nn.Identity() 
+    resnet_model.fc = torch.nn.Identity()
     resnet_model = resnet_model.to(device)
     resnet_model.eval()
 
@@ -40,7 +40,6 @@ def predict(dataFilePath, bestModelPath):
             print(f"Error processing {img_path}: {e}")
             return None
 
-
     image_paths = []
     for ext in ['*.png', '*.jpg', '*.jpeg', '*.PNG', '*.JPG', '*.JPEG']:
         image_paths.extend(Path(dataFilePath).glob(ext))
@@ -58,7 +57,6 @@ def predict(dataFilePath, bestModelPath):
         print(f"Warning: No images found in {dataFilePath}")
         return []
 
-    # feature extraction 
     features = []
     valid_indices = []
 
@@ -76,20 +74,44 @@ def predict(dataFilePath, bestModelPath):
 
     X_scaled = scaler.transform(X)
 
-    predictions = []
-
     distances, _ = knn.kneighbors(X_scaled)
     avg_distances = distances.mean(axis=1)
 
+    per_feature_results = []
     for i in range(len(X_scaled)):
-        # Check if sample is too far from training data
         if avg_distances[i] > threshold:
-            predictions.append(6) 
+            per_feature_results.append({
+                "prediction": 6,
+                "avg_distance": float(avg_distances[i])
+            })
         else:
-            pred = knn.predict(X_scaled[i].reshape(1, -1))[0]
-            predictions.append(pred)
+            pred = int(knn.predict(X_scaled[i].reshape(1, -1))[0])
+            per_feature_results.append({
+                "prediction": pred,
+                "avg_distance": float(avg_distances[i])
+            })
 
-    return predictions
+    results = []
+    feat_idx = 0
+    for idx, img_path in enumerate(image_paths):
+        if idx in valid_indices:
+            r = per_feature_results[feat_idx]
+            results.append({
+                "image_path": str(img_path),
+                "prediction": r["prediction"],
+                "avg_distance": r["avg_distance"],
+                "status": "ok"
+            })
+            feat_idx += 1
+        else:
+            results.append({
+                "image_path": str(img_path),
+                "prediction": 6,
+                "avg_distance": None,
+                "status": "error"
+            })
+
+    return results
 
 
 if __name__ == "__main__":
@@ -97,7 +119,7 @@ if __name__ == "__main__":
     model_path = "models/knn_k3_model.pkl"
 
     # Make predictions
-    predictions = predict(data_path, model_path)
+    results = predict(data_path, model_path)
 
     class_map = {
         0: "cardboard",
@@ -109,11 +131,12 @@ if __name__ == "__main__":
         6: "unknown"
     }
 
-    img_paths = []
-    for ext in ['*.png', '*.jpg', '*.jpeg', '*.PNG', '*.JPG', '*.JPEG']:
-        img_paths.extend(Path(data_path).glob(ext))
-    img_paths = sorted(list(set(img_paths)))
-
     print("\nPredictions:")
-    for i, (p, pred) in enumerate(zip(img_paths, predictions)):
-        print(f"{p.name}: {class_map[pred]}")
+    print(f"{'Index':<6}{'Filename':<40}{'Label':<12}{'ID':<4}{'AvgDist':>10}{'Status':>10}")
+    for i, r in enumerate(results):
+        p = Path(r["image_path"])
+        label = class_map.get(r["prediction"], "unknown")
+        avgd = f"{r['avg_distance']:.4f}" if r["avg_distance"] is not None else "-"
+        status = r.get("status", "ok")
+        print(
+            f"{i:<6}{p.name:<40}{label:<12}{r['prediction']:<4}{avgd:>10}{status:>10}")
