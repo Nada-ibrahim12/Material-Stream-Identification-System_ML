@@ -46,8 +46,8 @@ knn = None
 scaler = None
 svm_centroids = None
 svm_distance_thr = None
-svm_prob_thr = 0.5
-svm_margin_thr = 0.1
+svm_prob_thr = 0.35
+svm_margin_thr = 0.05
 svm_known_classes = [0, 1, 2, 3, 4, 5]
 svm_unknown_class = 6
 
