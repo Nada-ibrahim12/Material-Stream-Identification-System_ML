@@ -15,7 +15,7 @@ import joblib
 import argparse
 
 processed_dir = "data/processed"
-KNN_MODEL_PATH = "models/knn_with_unknown_k3_model.pkl"
+KNN_MODEL_PATH = "models/knn_k3_model.pkl"
 SVM_MODEL_PATH = "models/svm_open_set_model.pkl"
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 CONFIDENCE_THRESHOLD = 0.6
