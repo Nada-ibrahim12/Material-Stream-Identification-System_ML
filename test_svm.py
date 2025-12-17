@@ -134,4 +134,4 @@ if __name__ == "__main__":
 
     print("\nPredictions:")
     for p, pred in zip(img_paths, predictions):
-        print(f"{p.name}: {class_map[pred]}")
+        print(f"{p.name}   ---->    {class_map[pred]}")
