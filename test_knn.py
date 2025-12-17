@@ -93,7 +93,7 @@ def predict(dataFilePath, bestModelPath):
 
 
 if __name__ == "__main__":
-    data_path = "data/test/"
+    data_path = "test/"
     model_path = "models/knn_with_unknown_k3_model.pkl"
 
     # Make predictions

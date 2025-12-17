@@ -112,7 +112,7 @@ def predict(dataFilePath, bestModelPath):
 
 
 if __name__ == "__main__":
-    data_path = "data/test"
+    data_path = "test"
     model_path = "models/svm_open_set_model.pkl"
 
     predictions = predict(data_path, model_path)
