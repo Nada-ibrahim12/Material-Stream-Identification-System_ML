@@ -1,12 +1,10 @@
 import torch
 import torchvision.models as models
-from torchvision.models import ResNet50_Weights
 import torchvision.transforms as transforms
 from PIL import Image
 import numpy as np
 import os
 from pathlib import Path
-
 
 device = torch.device('cpu')
 
@@ -15,17 +13,15 @@ model.fc = torch.nn.Identity()
 model = model.to(device)
 model.eval()
 
-transform = transforms.Compose([
+transform_image = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
-    transforms.Normalize([0.485, 0.456, 0.406],
-                         [0.229, 0.224, 0.225])
-])
+    transforms.Normalize([0.485, 0.456, 0.406],[0.229, 0.224, 0.225])])
 
 def extract_features(path):
     try:
         img = Image.open(path).convert('RGB')
-        img = transform(img).unsqueeze(0).to(device)
+        img = transform_image(img).unsqueeze(0).to(device)
         with torch.no_grad():
             feat = model(img)
         return feat.cpu().numpy().flatten()
@@ -46,25 +42,26 @@ def extract_features_from_split(dataset_path, split_name, class_map):
         print(f"Warning: {split_path} not found. Skipping {split_name} split.")
         return np.array([]), np.array([])
 
-    for idx, class_name in enumerate(sorted(class_map.keys()), 1):
+    for i, class_name in enumerate(sorted(class_map.keys()), 1):
         class_path = os.path.join(split_path, class_name)
 
         if not os.path.isdir(class_path):
-            print(f"  {idx}. {class_name}: Skipped (directory not found)")
+            print(f"{i}. {class_name}: Skipped (directory not found)")
             continue
 
+        extensions = ('png', 'jpg', 'jpeg', 'bmp', 'tiff', 'gif')  
         images = []
-        for ext in ('*.png', '*.jpg', '*.jpeg'):
-            images.extend(Path(class_path).glob(f"*{ext[1:]}"))
-            images.extend(Path(class_path).glob(f"*{ext[1:].upper()}"))
+        for ext in extensions:
+            images.extend(Path(class_path).glob(f"*.{ext}"))
+            images.extend(Path(class_path).glob(f"*.{ext.upper()}"))
 
         images = list(set(images))
 
         if not images:
-            print(f"  {idx}. {class_name}: No images found")
+            print(f"{i}. {class_name}: No images found")
             continue
 
-        print(f"  {idx}. {class_name}: Processing {len(images)} images...")
+        print(f"{i}. {class_name}: Processing {len(images)} images...")
 
         class_processed = 0
         class_failed = 0
@@ -100,11 +97,11 @@ class_map = {
     "metal": 2,
     "paper": 3,
     "plastic": 4,
-    "trash": 5
+    "trash": 5,
+    "unknown" : 6
 }
 
-X_train, y_train = extract_features_from_split(
-    DATASET_PATH, 'train', class_map)
+X_train, y_train = extract_features_from_split(DATASET_PATH, 'train', class_map)
 X_val, y_val = extract_features_from_split(DATASET_PATH, 'val', class_map)
 
 processed_dir = "data/processed"
@@ -128,15 +125,20 @@ if len(X_val) > 0:
 else:
     print("\nNo validation features extracted")
 
-X_combined = np.vstack([X_train, X_val]) if (len(X_train) > 0 and len(
-    X_val) > 0) else (X_train if len(X_train) > 0 else X_val)
-y_combined = np.concatenate([y_train, y_val]) if (len(y_train) > 0 and len(
-    y_val) > 0) else (y_train if len(y_train) > 0 else y_val)
+if len(X_train) > 0 and len(X_val) > 0:
+    X_combined = np.vstack([X_train, X_val])
+    y_combined = np.concatenate([y_train, y_val])
+elif len(X_train) > 0:
+    X_combined = X_train
+    y_combined = y_train
+else:
+    X_combined = X_val
+    y_combined = y_val
 
 if len(X_combined) > 0:
     np.save(os.path.join(processed_dir, "x_features.npy"), X_combined)
     np.save(os.path.join(processed_dir, "y_labels.npy"), y_combined)
-    print(f"\nCombined features saved (backward compatible):")
+    print(f"\nCombined features saved:")
     print(f"data/processed/x_features.npy: {X_combined.shape}")
     print(f"data/processed/y_labels.npy: {y_combined.shape}")
 
@@ -144,18 +146,37 @@ print("Feature Extraction Summary")
 print(f"Training samples: {len(X_train)}")
 print(f"Validation samples: {len(X_val)}")
 print(f"Total samples: {len(X_combined)}")
-print(
-    f"Features per sample: {X_combined.shape[1] if len(X_combined) > 0 else 0}")
+
+features_len = []
+if X_combined.size > 0:
+    features_len = X_combined.shape[1]
+else: 
+    features_len = 0
+print(f"Features per sample: {features_len}")
+
 print(f"Number of classes: {len(class_map)}")
 
 if len(y_combined) > 0:
     print(f"\nClass distribution:")
-    for class_name, class_id in sorted(class_map.items(), key=lambda x: x[1]):
-        count = np.sum(y_combined == class_id)
-        train_count = np.sum(y_train == class_id) if len(y_train) > 0 else 0
-        val_count = np.sum(y_val == class_id) if len(y_val) > 0 else 0
-        percentage = (count / len(y_combined)) * \
-            100 if len(y_combined) > 0 else 0
-        print(f"  {class_name:12} | Total: {count:5d} | Train: {train_count:5d} | Val: {val_count:5d} | {percentage:6.2f}%")
+    class_items = list(class_map.items())
+    class_items.sort(key=lambda item: item[1])
 
+    for class_name, class_id in class_items:
+        total_count = np.sum(y_combined == class_id)
+        if len(y_train) > 0:
+            train_count = np.sum(y_train == class_id)
+        else:
+            train_count = 0
+
+        if len(y_val) > 0:
+            val_count = np.sum(y_val == class_id)
+        else:
+            val_count = 0
+
+        if len(y_combined) > 0:
+            percentage = (total_count / len(y_combined)) * 100
+        else:
+            percentage = 0.0
+
+        print(f"  {class_name:12} | Total: {total_count:5d} | "f"Train: {train_count:5d} | Val: {val_count:5d} | {percentage:6.2f}%")
 print("Features extracted and saved successfully!!!!")

@@ -4,16 +4,13 @@ import torchvision.transforms as transforms
 from PIL import Image
 import numpy as np
 import joblib
-import os
 from pathlib import Path
-
 
 def predict(dataFilePath, bestModelPath):
     model_data = joblib.load(bestModelPath)
     svm = model_data["svm"]
     scaler = model_data["scaler"]
 
-    # Open-set recognition parameters
     centroids = model_data.get("centroids", None)
     distance_thr = model_data.get("distance_thr", None)
     prob_thr = model_data.get("prob_thr", 0.5)
@@ -32,7 +29,7 @@ def predict(dataFilePath, bestModelPath):
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406],
-                             [0.229, 0.224, 0.225])
+                            [0.229, 0.224, 0.225])
     ])
 
     def extract_features(img_path):
@@ -66,11 +63,11 @@ def predict(dataFilePath, bestModelPath):
     features = []
     valid_indices = []
 
-    for idx, img_path in enumerate(image_paths):
+    for i, img_path in enumerate(image_paths):
         feat = extract_features(str(img_path))
         if feat is not None:
             features.append(feat)
-            valid_indices.append(idx)
+            valid_indices.append(i)
 
     if not features:
         print("Error: No valid features extracted")
@@ -80,13 +77,16 @@ def predict(dataFilePath, bestModelPath):
 
     X_scaled = scaler.transform(X)
 
-    use_open_set = (centroids is not None and distance_thr is not None)
+    if centroids is not None and distance_thr is not None:
+        use_open_set = True
+    else:
+        use_open_set = False
 
     per_feature_results = []
     if use_open_set:
         for x in X_scaled:
             dists = np.array([np.linalg.norm(x - centroids[c])
-                             for c in known_classes])
+                            for c in known_classes])
             min_dist = float(dists.min())
 
             if min_dist > distance_thr:
@@ -94,12 +94,14 @@ def predict(dataFilePath, bestModelPath):
                     {"prediction": int(unknown_class), "avg_distance": min_dist})
                 continue
 
-            # try to use predict_proba if available
             try:
                 probs = svm.predict_proba([x])[0]
-                sorted_probs = np.sort(probs)[::-1]
+                sorted_probs = sorted(probs, reverse=True)
                 max_prob = sorted_probs[0]
-                second_prob = sorted_probs[1] if len(sorted_probs) > 1 else 0
+                if len(sorted_probs) > 1:
+                    second_prob = sorted_probs[1]
+                else:
+                    second_prob = 0.0
                 margin = max_prob - second_prob
                 pred_class = int(svm.classes_[np.argmax(probs)])
 
@@ -111,38 +113,37 @@ def predict(dataFilePath, bestModelPath):
                         {"prediction": pred_class, "avg_distance": min_dist})
             except Exception:
                 pred_class = int(svm.predict([x])[0])
-                per_feature_results.append(
-                    {"prediction": pred_class, "avg_distance": min_dist})
-    else:
-        # closed-set: predict and no distance
+                per_feature_results.append({"prediction": pred_class, 
+                                            "avg_distance": min_dist})
+    else: # closed-set, predict and no distance
         for x in X_scaled:
             pred = int(svm.predict([x])[0])
-            per_feature_results.append(
-                {"prediction": pred, "avg_distance": None})
+            per_feature_results.append({"prediction": pred, "avg_distance": None})
 
-    # Map back to original image list, marking errored images
+    # Map back to original image list
     results = []
     feat_idx = 0
-    for idx, img_path in enumerate(image_paths):
-        if idx in valid_indices:
+
+    for i, img_path in enumerate(image_paths):
+        if i in valid_indices:
             r = per_feature_results[feat_idx]
-            results.append({
+            feat_idx += 1
+            result_item = {
                 "image_path": str(img_path),
                 "prediction": r["prediction"],
                 "avg_distance": r["avg_distance"],
-                "status": "ok"
-            })
-            feat_idx += 1
+                "status": "ok" }
+            results.append(result_item)
         else:
-            results.append({
+            result_item = {
                 "image_path": str(img_path),
                 "prediction": int(unknown_class),
                 "avg_distance": None,
                 "status": "error"
-            })
+            }
+            results.append(result_item)
 
     return results
-
 
 if __name__ == "__main__":
     data_path = "test"
@@ -163,9 +164,18 @@ if __name__ == "__main__":
     print("\nPredictions:")
     print(f"{'Index':<6}{'Filename':<40}{'Label':<12}{'ID':<4}{'AvgDist':>10}{'Status':>10}")
     for i, r in enumerate(results):
-        p = Path(r["image_path"])
-        label = class_map.get(r["prediction"], "unknown")
-        avgd = f"{r['avg_distance']:.4f}" if r["avg_distance"] is not None else "-"
+        path_obj = Path(r["image_path"])
+        image_name = path_obj.name
+
+        pred_id = r["prediction"]
+        label = class_map.get(pred_id, "unknown")
+
+        if r["avg_distance"] is not None:
+            avg_distance = f"{r['avg_distance']:.4f}"
+        else:
+            avg_distance = "-"
+
         status = r.get("status", "ok")
-        print(
-            f"{i:<6}{p.name:<40}{label:<12}{r['prediction']:<4}{avgd:>10}{status:>10}")
+
+        print(f"{i:<6}{image_name:<40}{label:<12}{pred_id:<4}{avg_distance:>10}{status:>10}")
+

@@ -26,7 +26,7 @@ def predict(dataFilePath, bestModelPath):
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
         transforms.Normalize([0.485, 0.456, 0.406],
-                             [0.229, 0.224, 0.225])
+                            [0.229, 0.224, 0.225])
     ])
 
     def extract_features(img_path):
@@ -45,8 +45,8 @@ def predict(dataFilePath, bestModelPath):
         image_paths.extend(Path(dataFilePath).glob(ext))
 
     image_paths = sorted(list(set(image_paths)))
-
     print(f"Found {len(image_paths)} images in {dataFilePath}:")
+
     for p in image_paths:
         try:
             print(f" - {p.name}")
@@ -60,11 +60,11 @@ def predict(dataFilePath, bestModelPath):
     features = []
     valid_indices = []
 
-    for idx, img_path in enumerate(image_paths):
+    for i, img_path in enumerate(image_paths):
         feat = extract_features(str(img_path))
         if feat is not None:
             features.append(feat)
-            valid_indices.append(idx)
+            valid_indices.append(i)
 
     if not features:
         print("Error: No valid features extracted")
@@ -91,36 +91,36 @@ def predict(dataFilePath, bestModelPath):
                 "avg_distance": float(avg_distances[i])
             })
 
-    results = []
     feat_idx = 0
-    for idx, img_path in enumerate(image_paths):
-        if idx in valid_indices:
-            r = per_feature_results[feat_idx]
-            results.append({
+    results = []
+    for i in range(len(image_paths)):
+        img_path = image_paths[i]
+
+        if i in valid_indices:
+            feature_result = per_feature_results[feat_idx]
+            result_item = {
                 "image_path": str(img_path),
-                "prediction": r["prediction"],
-                "avg_distance": r["avg_distance"],
+                "prediction": feature_result["prediction"],
+                "avg_distance": feature_result["avg_distance"],
                 "status": "ok"
-            })
+            }
             feat_idx += 1
         else:
-            results.append({
+            result_item = {
                 "image_path": str(img_path),
                 "prediction": 6,
                 "avg_distance": None,
                 "status": "error"
-            })
+            }
+        results.append(result_item)
 
     return results
-
 
 if __name__ == "__main__":
     data_path = "test/"
     model_path = "models/knn_k3_model.pkl"
 
-    # Make predictions
     results = predict(data_path, model_path)
-
     class_map = {
         0: "cardboard",
         1: "glass",
@@ -133,10 +133,27 @@ if __name__ == "__main__":
 
     print("\nPredictions:")
     print(f"{'Index':<6}{'Filename':<40}{'Label':<12}{'ID':<4}{'AvgDist':>10}{'Status':>10}")
-    for i, r in enumerate(results):
-        p = Path(r["image_path"])
-        label = class_map.get(r["prediction"], "unknown")
-        avgd = f"{r['avg_distance']:.4f}" if r["avg_distance"] is not None else "-"
-        status = r.get("status", "ok")
-        print(
-            f"{i:<6}{p.name:<40}{label:<12}{r['prediction']:<4}{avgd:>10}{status:>10}")
+    for i in range(len(results)):
+        r = results[i]
+
+        path_obj = Path(r["image_path"])
+        image_name = path_obj.name
+
+        prediction = r["prediction"]
+        if prediction in class_map:
+            label = class_map[prediction]
+        else:
+            label = "unknown"
+
+        if r["avg_distance"] is not None:
+            avg_distance = f"{r['avg_distance']:.4f}"
+        else:
+            avg_distance = "-"
+
+        if "status" in r:
+            status = r["status"]
+        else:
+            status = "ok"
+
+        print(f"{i:<6}{image_name:<40}{label:<12}{prediction:<4}{avg_distance:>10}{status:>10}")
+
