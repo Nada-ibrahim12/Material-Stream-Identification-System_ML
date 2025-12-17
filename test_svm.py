@@ -13,7 +13,7 @@ def predict(dataFilePath, bestModelPath):
     svm = model_data["svm"]
     scaler = model_data["scaler"]
 
-    # Open-set recognition parameters 
+    # Open-set recognition parameters
     centroids = model_data.get("centroids", None)
     distance_thr = model_data.get("distance_thr", None)
     prob_thr = model_data.get("prob_thr", 0.5)
@@ -24,7 +24,7 @@ def predict(dataFilePath, bestModelPath):
     device = torch.device('cpu')
 
     resnet_model = models.resnet50(pretrained=True)
-    resnet_model.fc = torch.nn.Identity()  
+    resnet_model.fc = torch.nn.Identity()
     resnet_model = resnet_model.to(device)
     resnet_model.eval()
 
@@ -85,11 +85,13 @@ def predict(dataFilePath, bestModelPath):
     per_feature_results = []
     if use_open_set:
         for x in X_scaled:
-            dists = np.array([np.linalg.norm(x - centroids[c]) for c in known_classes])
+            dists = np.array([np.linalg.norm(x - centroids[c])
+                             for c in known_classes])
             min_dist = float(dists.min())
 
             if min_dist > distance_thr:
-                per_feature_results.append({"prediction": int(unknown_class), "avg_distance": min_dist})
+                per_feature_results.append(
+                    {"prediction": int(unknown_class), "avg_distance": min_dist})
                 continue
 
             # try to use predict_proba if available
@@ -102,17 +104,21 @@ def predict(dataFilePath, bestModelPath):
                 pred_class = int(svm.classes_[np.argmax(probs)])
 
                 if max_prob < prob_thr or margin < margin_thr:
-                    per_feature_results.append({"prediction": int(unknown_class), "avg_distance": min_dist})
+                    per_feature_results.append(
+                        {"prediction": int(unknown_class), "avg_distance": min_dist})
                 else:
-                    per_feature_results.append({"prediction": pred_class, "avg_distance": min_dist})
+                    per_feature_results.append(
+                        {"prediction": pred_class, "avg_distance": min_dist})
             except Exception:
                 pred_class = int(svm.predict([x])[0])
-                per_feature_results.append({"prediction": pred_class, "avg_distance": min_dist})
+                per_feature_results.append(
+                    {"prediction": pred_class, "avg_distance": min_dist})
     else:
         # closed-set: predict and no distance
         for x in X_scaled:
             pred = int(svm.predict([x])[0])
-            per_feature_results.append({"prediction": pred, "avg_distance": None})
+            per_feature_results.append(
+                {"prediction": pred, "avg_distance": None})
 
     # Map back to original image list, marking errored images
     results = []
@@ -161,4 +167,5 @@ if __name__ == "__main__":
         label = class_map.get(r["prediction"], "unknown")
         avgd = f"{r['avg_distance']:.4f}" if r["avg_distance"] is not None else "-"
         status = r.get("status", "ok")
-        print(f"{i:<6}{p.name:<40}{label:<12}{r['prediction']:<4}{avgd:>10}{status:>10}")
+        print(
+            f"{i:<6}{p.name:<40}{label:<12}{r['prediction']:<4}{avgd:>10}{status:>10}")
