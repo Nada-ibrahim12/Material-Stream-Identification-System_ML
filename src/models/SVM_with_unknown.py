@@ -13,8 +13,8 @@ unknown_class = 6
 dist_multipliers = [1.0, 1.5, 2.0, 2.5, 3.0]
 
 # Probability and margin thresholds for secondary rejection
-prob_thr = 0.5
-margin_thr = 0.1
+prob_thr = 0.35
+margin_thr = 0.05
 
 splitting = os.path.exists(os.path.join(processed_dir, 'x_features_train.npy')) and os.path.exists(
     os.path.join(processed_dir, 'x_features_val.npy'))
