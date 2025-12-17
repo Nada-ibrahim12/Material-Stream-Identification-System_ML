@@ -3,13 +3,21 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from sklearn.model_selection import train_test_split
+import joblib
+from pathlib import Path
 
 processed_dir = "data/processed"
 
 unknown_class = 6
-dist_thr = 2.2  
+# Distance threshold multiplier sweep (mean + m * std)
+dist_multipliers = [1.0, 1.5, 2.0, 2.5, 3.0]
 
-splitting = os.path.exists(os.path.join(processed_dir, 'x_features_train.npy')) and os.path.exists(os.path.join(processed_dir, 'x_features_val.npy'))
+# Probability and margin thresholds for secondary rejection
+prob_thr = 0.5
+margin_thr = 0.1
+
+splitting = os.path.exists(os.path.join(processed_dir, 'x_features_train.npy')) and os.path.exists(
+    os.path.join(processed_dir, 'x_features_val.npy'))
 
 if splitting:
     print("Loading features from train/val split:")
@@ -27,12 +35,12 @@ else:
     )
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled   = scaler.transform(X_test)
+X_test_scaled = scaler.transform(X_test)
 
 known_classes = np.unique(y_train[y_train != unknown_class])
 
-svm = SVC(kernel='rbf', C=1, gamma='scale', probability=True, random_state=42)
-svm.fit(  
+svm = SVC(kernel='rbf', C=3, gamma='scale', probability=True, random_state=42)
+svm.fit(
     X_train_scaled[np.isin(y_train, known_classes)],
     y_train[np.isin(y_train, known_classes)]
 )
@@ -48,54 +56,102 @@ for c in known_classes:
     dist = np.linalg.norm(c_features - centroid, axis=1)
     distances.extend(dist)
 
-final_thr = np.mean(distances) + dist_thr * np.std(distances)
-print("Auto distance threshold:", final_thr)
+distances = np.array(distances)
+mean_dist = distances.mean()
+std_dist = distances.std()
 
-y_pred = []
-covered = []
 
-for x in X_test_scaled:
-    final_distances = []
-    for c in known_classes:
-        dist = np.linalg.norm(x - centroids[c])
-        final_distances.append(dist)
-    final_distances = np.array(final_distances)
-    min_dist = final_distances.min()
+def evaluate_threshold(multiplier):
+    thr = mean_dist + multiplier * std_dist
+    preds = []
+    covered_flags = []
+    for x in X_test_scaled:
+        final_distances = np.array(
+            [np.linalg.norm(x - centroids[c]) for c in known_classes])
+        min_dist = final_distances.min()
 
-    if min_dist > final_thr:
-        y_pred.append(unknown_class)
-        covered.append(False)
+        if min_dist > thr:
+            preds.append(unknown_class)
+            covered_flags.append(False)
+            continue
+
+        # Secondary rejection using probability and margin
+        probs = svm.predict_proba([x])[0]
+        sorted_probs = np.sort(probs)[::-1]
+        max_prob = sorted_probs[0]
+        second_prob = sorted_probs[1] if len(sorted_probs) > 1 else 0.0
+        margin = max_prob - second_prob
+
+        if max_prob < prob_thr or margin < margin_thr:
+            preds.append(unknown_class)
+            covered_flags.append(False)
+        else:
+            preds.append(svm.predict([x])[0])
+            covered_flags.append(True)
+
+    preds = np.array(preds)
+    covered_flags = np.array(covered_flags)
+
+    known_mask = (y_test != unknown_class)
+    unknown_mask = (y_test == unknown_class)
+
+    known_acc = (preds[known_mask] == y_test[known_mask]).mean()
+    if unknown_mask.sum() > 0:
+        unk_detect = (preds[unknown_mask] == unknown_class).mean()
     else:
-        y_pred.append(svm.predict([x])[0])
-        covered.append(True)
-    
-y_pred = np.array(y_pred)
-covered = np.array(covered)
+        unk_detect = 0.0
 
-known_selector   = (y_test != unknown_class)
-unknown_selector = (y_test == unknown_class)
+    overall_acc = (preds == y_test).mean()
+    coverage = covered_flags.mean()
+    covered_acc = (preds[covered_flags] == y_test[covered_flags]
+                   ).mean() if covered_flags.sum() > 0 else 0.0
+    unk_count = np.sum(preds == unknown_class)
 
-known_accuracy = (y_pred[known_selector] == y_test[known_selector]).mean()
+    return {
+        "multiplier": multiplier,
+        "thr": thr,
+        "known_acc": known_acc,
+        "unk_detect": unk_detect,
+        "overall_acc": overall_acc,
+        "coverage": coverage,
+        "covered_acc": covered_acc,
+        "unk_count": unk_count,
+    }
 
-unknown_detect = []
-if np.sum(unknown_selector) > 0:
-    unknown_detect = (y_pred[unknown_selector] == unknown_class).mean()
-else:
-    unknown_detect = 0.0
-unknown_count = np.sum(y_pred == unknown_class)
 
-overall_accuracy = (y_pred == y_test).mean()
-coverage = covered.mean()
+results = [evaluate_threshold(m) for m in dist_multipliers]
 
-if covered.sum() > 0:
-    covered_accuracy = (y_pred[covered] == y_test[covered]).mean()
-else:
-    covered_accuracy = 0.0
+print("\nSVM Unknown Detection Sweep:")
+print("mult | thr | known% | unk_detect% | overall% | coverage% | unk_count")
+for r in results:
+    print(f"{r['multiplier']:>4.1f} | {r['thr']:.2f} | "
+          f"{r['known_acc']*100:6.2f} | {r['unk_detect']*100:11.2f} | "
+          f"{r['overall_acc']*100:8.2f} | {r['coverage']*100:9.2f} | {r['unk_count']}")
 
-print("\nSVM Unknown Detection (Auto Threshold):")
-print(f"Known Accuracy:        {known_accuracy*100:.2f}%")
-print(f"Unknown Detection:     {unknown_detect*100:.2f}%")
-print(f"Coverage:              {coverage*100:.2f}%")
-print(f"Accuracy on Covered:   {covered_accuracy*100:.2f}%")
-print(f"Overall Accuracy:      {overall_accuracy*100:.2f}%")
-print(f"Unknown samples detected: {unknown_count}")
+results_sorted = sorted(results, key=lambda r: (
+    r['unk_detect'], r['overall_acc']), reverse=True)
+best = results_sorted[0]
+
+print("\nSelected threshold:")
+print(f"multiplier={best['multiplier']}, thr={best['thr']:.2f}, "
+      f"known={best['known_acc']*100:.2f}%, unk_detect={best['unk_detect']*100:.2f}%, "
+      f"overall={best['overall_acc']*100:.2f}%, coverage={best['coverage']*100:.2f}%")
+
+models_dir = Path("models")
+models_dir.mkdir(exist_ok=True)
+
+model_dict = {
+    "svm": svm,
+    "scaler": scaler,
+    "centroids": centroids,
+    "distance_thr": best["thr"],
+    "prob_thr": prob_thr,
+    "margin_thr": margin_thr,
+    "known_classes": known_classes.tolist(),
+    "unknown_class": unknown_class,
+    "dist_thr_multiplier": best["multiplier"],
+}
+
+model_path = models_dir / "svm_open_set_model.pkl"
+joblib.dump(model_dict, model_path)
+print(f"\nOpen-set model saved to: {model_path}")

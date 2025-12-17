@@ -2,6 +2,7 @@ import numpy as np
 from sklearn.preprocessing import StandardScaler
 from sklearn.neighbors import KNeighborsClassifier
 import os
+import joblib
 from pathlib import Path
 
 processed_dir = Path.cwd() / "data" / "processed"
@@ -17,6 +18,10 @@ X_test_scaled = scaler.transform(X_test)
 
 k_values = [3, 5, 7, 9, 11]
 thr = 0.58
+
+# Create models directory if it doesn't exist
+models_dir = Path.cwd() / "models"
+models_dir.mkdir(exist_ok=True)
 
 print("========== KNN RESULTS ==========")
 
@@ -43,7 +48,7 @@ for k in k_values:
     y_pred = []
     for i in range(len(X_test_scaled)):
         if avg_dist[i] > thr:
-            y_pred.append(6)  
+            y_pred.append(6)
         else:
             y_pred.append(
                 knn.predict(X_test_scaled[i].reshape(1, -1))[0]
@@ -63,3 +68,16 @@ for k in k_values:
     print(f"After Unknown → Known {known_acc*100:.2f}% | "
           f"Unknown Reject {unknown_reject*100:.2f}% | "
           f"Overall {overall_acc*100:.2f}%")
+
+    model_dict = {
+        "knn": knn,
+        "scaler": scaler,
+        "threshold": thr,
+        "k": k,
+        "metric": "cosine",
+        "weights": "uniform"
+    }
+
+    model_path = models_dir / f"knn_k{k}_model.pkl"
+    joblib.dump(model_dict, model_path)
+    print(f"Model saved to: {model_path}")

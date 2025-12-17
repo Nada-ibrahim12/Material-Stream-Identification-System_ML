@@ -70,7 +70,8 @@ for class_name in os.listdir(dataset):
             shutil.copy(src, dst)
 
     required_train_size = max(
-        int(total_images * MIN_TRAIN_RATIO),
+        # int(total_images * MIN_TRAIN_RATIO),
+        0,
         MIN_TRAIN_SIZE
     )
 
