@@ -17,7 +17,7 @@ X_train_scaled = scaler.fit_transform(X_train)
 X_test_scaled = scaler.transform(X_test)
 
 k_values = [3, 5, 7, 9, 11]
-thr = 0.58
+thr = 0.7
 
 # Create models directory if it doesn't exist
 models_dir = Path.cwd() / "models"
