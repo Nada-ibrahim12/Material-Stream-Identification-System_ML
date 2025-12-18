@@ -26,7 +26,6 @@ def extract_features(path):
             feat = model(img)
         return feat.cpu().numpy().flatten()
     except Exception as e:
-        print(f"Error processing {path}: {e}")
         return None
 
 def extract_features_from_split(dataset_path, split_name, class_map):
@@ -34,7 +33,7 @@ def extract_features_from_split(dataset_path, split_name, class_map):
     total_processed = 0
     total_failed = 0
 
-    print(f"Extracting features from {split_name.upper()} split")
+    print(f"\nExtracting features from {split_name.upper()} split")
 
     split_path = os.path.join(dataset_path, split_name)
 
@@ -92,17 +91,17 @@ def extract_features_from_split(dataset_path, split_name, class_map):
 
 DATASET_PATH = "data/augmented"
 class_map = {
-    "cardboard": 0,
-    "glass": 1,
-    "metal": 2,
-    "paper": 3,
-    "plastic": 4,
-    "trash": 5,
-    "unknown" : 6
+    "Glass": 0,
+    "Paper": 1,
+    "Cardboard": 2,
+    "Plastic": 3,
+    "Metal": 4,
+    "Trash": 5,
+    # "Unknown" : 6
 }
 
 X_train, y_train = extract_features_from_split(DATASET_PATH, 'train', class_map)
-X_val, y_val = extract_features_from_split(DATASET_PATH, 'val', class_map)
+X_val, y_val = extract_features_from_split(DATASET_PATH, 'test', class_map)
 
 processed_dir = "data/processed"
 os.makedirs(processed_dir, exist_ok=True)
@@ -126,32 +125,15 @@ else:
     print("\nNo validation features extracted")
 
 if len(X_train) > 0 and len(X_val) > 0:
-    X_combined = np.vstack([X_train, X_val])
     y_combined = np.concatenate([y_train, y_val])
-elif len(X_train) > 0:
-    X_combined = X_train
-    y_combined = y_train
-else:
-    X_combined = X_val
-    y_combined = y_val
 
-if len(X_combined) > 0:
-    np.save(os.path.join(processed_dir, "x_features.npy"), X_combined)
-    np.save(os.path.join(processed_dir, "y_labels.npy"), y_combined)
-    print(f"\nCombined features saved:")
-    print(f"data/processed/x_features.npy: {X_combined.shape}")
-    print(f"data/processed/y_labels.npy: {y_combined.shape}")
-
-print("Feature Extraction Summary")
+print("\nFeature Extraction Summary")
 print(f"Training samples: {len(X_train)}")
 print(f"Validation samples: {len(X_val)}")
-print(f"Total samples: {len(X_combined)}")
+print(f"Total samples: {len(X_train)+len(X_val)}")
 
-features_len = []
-if X_combined.size > 0:
-    features_len = X_combined.shape[1]
-else: 
-    features_len = 0
+
+features_len = X_train.shape[1]
 print(f"Features per sample: {features_len}")
 
 print(f"Number of classes: {len(class_map)}")

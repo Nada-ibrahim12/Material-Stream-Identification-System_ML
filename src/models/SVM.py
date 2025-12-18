@@ -1,73 +1,166 @@
-import numpy as np
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import StandardScaler
-from sklearn.model_selection import train_test_split
-from sklearn.svm import SVC
 import os
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.model_selection import train_test_split
 import joblib
 from pathlib import Path
 
 processed_dir = "data/processed"
 
+unknown_class = 6
+# dist_multipliers = [1.0, 1.5, 2.0, 2.5, 3.0] # Distance threshold multiplier (mean + m * std)
+m = 3.0
+
+# Probability and margin thresholds for secondary rejection
+prob_thr = 0.35
+margin_thr = 0.05
+
 splitting = os.path.exists(os.path.join(processed_dir, 'x_features_train.npy')) and os.path.exists(
     os.path.join(processed_dir, 'x_features_val.npy'))
 
-if splitting:
-    print("Loading features from train/val split:")
-    X_train = np.load(os.path.join(processed_dir, 'x_features_train.npy'))
-    y_train = np.load(os.path.join(processed_dir, 'y_labels_train.npy'))
-    X_test = np.load(os.path.join(processed_dir, 'x_features_val.npy'))
-    y_test = np.load(os.path.join(processed_dir, 'y_labels_val.npy'))
-else:
-    print("Loading combined features:")
-    X = np.load(os.path.join(processed_dir, 'x_features.npy'))
-    y = np.load(os.path.join(processed_dir, 'y_labels.npy'))
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y, shuffle=True
-    )
+X_train = np.load(os.path.join(processed_dir, 'x_features_train.npy'))
+y_train = np.load(os.path.join(processed_dir, 'y_labels_train.npy'))
+X_test = np.load(os.path.join(processed_dir, 'x_features_val.npy'))
+y_test = np.load(os.path.join(processed_dir, 'y_labels_val.npy'))
+
 
 scaler = StandardScaler()
 X_train_scaled = scaler.fit_transform(X_train)
-X_val_scaled = scaler.transform(X_test)
+X_test_scaled = scaler.transform(X_test)
 
-c_values = [0.3, 0.5, 0.7, 0.9, 1, 3, 5, 10]
+known_classes = np.unique(y_train[y_train != unknown_class])
+
+svm = SVC(kernel='rbf', C=3, gamma='scale', probability=True, random_state=42)
+known_filter = np.isin(y_train, known_classes)
+svm.fit(X_train_scaled[known_filter], y_train[known_filter])
+    
+
+centroids = {}
+for c in known_classes:
+    centroids[c] = X_train_scaled[y_train == c].mean(axis=0)
+
+distances = []
+for c in known_classes:
+    c_features = X_train_scaled[y_train == c]
+    centroid = centroids[c]
+    dist = np.linalg.norm(c_features - centroid, axis=1)
+    distances.extend(dist)
+
+distances = np.array(distances)
+mean_dist = distances.mean()
+std_dist = distances.std()
+
+def evaluate_threshold(multiplier):
+    thr = mean_dist + multiplier * std_dist
+    preds = []
+    covered_flags = []
+    for x in X_test_scaled:
+        final_distances = []
+        for c in known_classes:
+            dist = np.linalg.norm(x - centroids[c])
+            final_distances.append(dist)
+
+        min_dist = min(final_distances)
+        
+        if min_dist > thr:
+            preds.append(unknown_class)
+            covered_flags.append(False)
+            continue
+
+        # Secondary rejection using probability and margin
+        probs = svm.predict_proba([x])[0] # get predicted probabilities for sample x
+        sorted_probs = sorted(probs, reverse=True) # descending order
+        max_prob = sorted_probs[0]
+
+        # Second highest probability or 0 if only one class exists
+        if len(sorted_probs) > 1:
+            second_prob = sorted_probs[1]
+        else:
+            second_prob = 0.0
+        margin = max_prob - second_prob # margin between 2 probs
+
+        if max_prob < prob_thr or margin < margin_thr:
+            preds.append(unknown_class)
+            covered_flags.append(False)
+        else:
+            preds.append(svm.predict([x])[0])
+            covered_flags.append(True)
+
+    preds = np.array(preds)
+    covered_flags = np.array(covered_flags)
+
+    known_mask = (y_test != unknown_class)
+    unknown_mask = (y_test == unknown_class)
+
+    known_acc = (preds[known_mask] == y_test[known_mask]).mean()
+    if unknown_mask.sum() > 0:
+        unk_detect = (preds[unknown_mask] == unknown_class).mean()
+    else:
+        unk_detect = 0.0
+
+    overall_acc = (preds == y_test).mean()
+    coverage = covered_flags.mean()
+
+    covered_acc = []
+    if covered_flags.sum() > 0:
+        covered_acc = (preds[covered_flags] == y_test[covered_flags]).mean()
+    else: 
+        covered_acc = 0.0
+        
+    unk_count = np.sum(preds == unknown_class)
+
+    return {
+        "multiplier": multiplier,
+        "thr": thr,
+        "known_acc": known_acc,
+        "unk_detect": unk_detect,
+        "overall_acc": overall_acc,
+        "coverage": coverage,
+        "covered_acc": covered_acc,
+        "unk_count": unk_count,
+    }
+
+# results = []
+# for m in dist_multipliers:
+r = evaluate_threshold(m)
+# results.append(result)
+
+print("SVM Unknown Detection:")
+# print("mult | thr | known% | unk_detect% | Accuracy% ")
+# for r in results:
+# print(f"{r['multiplier']:>4.1f} | {r['thr']:.2f} | "
+#     f"{r['known_acc']*100:6.2f} |  "
+#     f"{r['overall_acc']*100:8.2f}")
+
+# results_sorted = sorted(results, 
+#                         key=lambda r: (r['unk_detect'], r['overall_acc']), 
+#                         reverse=True)
+best = r
+# best = results_sorted[0]
+
+
+print(f"multiplier={best['multiplier']}\nthr={best['thr']:.2f}\nAccuracy={best['overall_acc']*100:.2f}%")
+
 
 models_dir = Path("models")
 models_dir.mkdir(exist_ok=True)
 
-best_c = None
-best_accuracy = 0
-best_svm = None
-
-for c in c_values:
-    svm = SVC(kernel='rbf', C=c, gamma='scale',
-              class_weight='balanced', random_state=42)
-    svm.fit(X_train_scaled, y_train)
-
-    train_accuracy = svm.score(X_train_scaled, y_train)
-    test_accuracy = svm.score(X_val_scaled, y_test)
-
-    gap = train_accuracy - test_accuracy
-
-    print(f"C={c:4}: Train Accuracy: {train_accuracy*100:6.2f}%  |  Val Accuracy: {test_accuracy*100:6.2f}%  |  Gap: {(gap)*100:6.2f}%")
-
-    if test_accuracy > best_accuracy:
-        best_accuracy = test_accuracy
-        best_c = c
-        best_svm = svm
-
-print(f"Best C: {best_c} with Val Accuracy: {best_accuracy*100:.2f}%")
-
 model_dict = {
-    "svm": best_svm,
+    "svm": svm,
     "scaler": scaler,
-    "best_c": best_c,
-    "kernel": "rbf",
-    "gamma": "scale",
-    "class_weight": "balanced"
+    "centroids": centroids,
+    "distance_thr": best["thr"],
+    "prob_thr": prob_thr,
+    "margin_thr": margin_thr,
+    "known_classes": known_classes.tolist(),
+    "unknown_class": unknown_class,
+    "dist_thr_multiplier": best["multiplier"],
 }
 
-model_path = models_dir / "svm_best_model.pkl"
+model_path = models_dir / "svm_model.pkl"
 joblib.dump(model_dict, model_path)
-print(f"\nBest model saved to: {model_path}")
+print(f"\nModel saved to: {model_path}")
+
+
