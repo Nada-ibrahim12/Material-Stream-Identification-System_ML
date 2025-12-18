@@ -148,6 +148,16 @@ print(f"multiplier={best['multiplier']}, thr={best['thr']:.2f}, "
     f"known={best['known_acc']*100:.2f}%, unk_detect={best['unk_detect']*100:.2f}%, "
     f"overall={best['overall_acc']*100:.2f}%, coverage={best['coverage']*100:.2f}%")
 
+# i need to print the best C and train accuracy and val accuracy and gap
+print(f"\nFinal SVM Training Accuracy on Known Classes: "
+      f"{svm.score(X_train_scaled[np.isin(y_train, known_classes)], y_train[np.isin(y_train, known_classes)])*100:.2f}%")
+print(f"Final SVM Validation Accuracy on Known Classes: "
+        f"{svm.score(X_test_scaled[np.isin(y_test, known_classes)], y_test[np.isin(y_test, known_classes)])*100:.2f}%")
+print(f"SVM Hyperparameter C: {svm.C}")
+print(f"SVM Hyperparameter gamma: {svm.gamma}")
+print(f"Gap between Train and Validation Accuracy: "
+        f"{(svm.score(X_train_scaled[np.isin(y_train, known_classes)], y_train[np.isin(y_train, known_classes)]) - svm.score(X_test_scaled[np.isin(y_test, known_classes)], y_test[np.isin(y_test, known_classes)]))*100:.2f}%")
+
 models_dir = Path("models")
 models_dir.mkdir(exist_ok=True)
 

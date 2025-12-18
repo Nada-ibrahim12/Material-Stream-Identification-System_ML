@@ -1,6 +1,3 @@
 venv/
 data/
-augment.py
 webcam_results/
-TODO.md
-processed/*
